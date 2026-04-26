@@ -1,6 +1,22 @@
-// ── STATE ──────────────────────────────────────────────────────────────────
-let history = [];   // [{ role, content }]
-let module  = 'guide';
+// ── IDENTITY ──────────────────────────────────────────────────────────────────
+// Anonymous user ID — generated once, stored in localStorage forever.
+function getOrCreateUserId() {
+  let id = localStorage.getItem('eitan_user_id');
+  if (!id) {
+    id = crypto.randomUUID?.() || LocalMemory._uuid();
+    localStorage.setItem('eitan_user_id', id);
+  }
+  return id;
+}
+const USER_ID = getOrCreateUserId();
+
+// ── STATE ──────────────────────────────────────────────────────────────────────
+let history      = [];          // [{ role, content }]
+let module       = 'guide';
+let sessionId    = null;        // current session ID (API mode)
+let memoryEnabled = false;
+let memoryMode   = 'api';       // 'api' | 'local'
+let historyPeriod = 'week';
 
 const MODULE_META = {
   guide: {
@@ -26,21 +42,16 @@ const MODULE_META = {
   },
 };
 
-// ── UTILS ──────────────────────────────────────────────────────────────────
+// ── UTILS ──────────────────────────────────────────────────────────────────────
 const $ = id => document.getElementById(id);
 
 function getBackend() {
-  // If served from the backend itself (recommended), use a relative URL —
-  // works in any environment (localhost, deployed, file:// won't but
-  // file:// can't fetch http anyway).
-  // The text input lets the user override for non-default setups.
   const override = $('backend-url').value.trim();
   if (override) return override.replace(/\/$/, '');
-  return '';   // empty = same origin
+  return '';
 }
 
 function md(raw) {
-  // Escape HTML first, then apply markdown
   return raw
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
     .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
@@ -53,7 +64,7 @@ function md(raw) {
     .replace(/\n/g,            '<br>');
 }
 
-// ── RENDER ─────────────────────────────────────────────────────────────────
+// ── RENDER ─────────────────────────────────────────────────────────────────────
 function renderWelcome() {
   const meta = MODULE_META[module];
   $('messages').innerHTML = `
@@ -78,7 +89,7 @@ function appendMsg(role, text, isError = false) {
     ? text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
     : `<p>${md(text)}</p>`;
 
-  const playBtnHtml = (!isUser && !isError) 
+  const playBtnHtml = (!isUser && !isError)
     ? `<button class="play-btn" onclick="playTTS(this, ${JSON.stringify(text).replace(/"/g, '&quot;')})">🔊 Read Aloud</button>`
     : '';
 
@@ -96,7 +107,72 @@ function appendMsg(role, text, isError = false) {
 function showTyping()  { $('typing').style.display = 'block'; $('messages').scrollTop = $('messages').scrollHeight; }
 function hideTyping()  { $('typing').style.display = 'none'; }
 
-// ── SEND ───────────────────────────────────────────────────────────────────
+// ── MEMORY HELPERS ─────────────────────────────────────────────────────────────
+
+async function apiStartSession() {
+  try {
+    const res = await fetch(`${getBackend()}/api/memory/session/start`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId: USER_ID, module }),
+    });
+    if (!res.ok) return null;
+    const { sessionId: sid } = await res.json();
+    return sid;
+  } catch { return null; }
+}
+
+async function apiEndSession(sid) {
+  if (!sid) return;
+  try {
+    await fetch(`${getBackend()}/api/memory/session/end`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        sessionId: sid,
+        userId: USER_ID,
+        module,
+        backend: $('model-select')?.value || 'nvidia',
+      }),
+    });
+  } catch { /* non-critical */ }
+}
+
+async function localEndSession(sid) {
+  if (!sid) return;
+  await LocalMemory.endSession(sid, USER_ID, module, getBackend(), $('model-select')?.value || 'nvidia');
+}
+
+async function startMemorySession() {
+  if (!memoryEnabled) return;
+  if (memoryMode === 'api') {
+    sessionId = await apiStartSession();
+  } else {
+    sessionId = LocalMemory.startSession(USER_ID, module);
+  }
+}
+
+async function endMemorySession() {
+  if (!memoryEnabled || !sessionId) return;
+  if (memoryMode === 'api') {
+    await apiEndSession(sessionId);
+  } else {
+    await localEndSession(sessionId);
+  }
+  sessionId = null;
+}
+
+function saveMessageLocal(role, content) {
+  if (!memoryEnabled || memoryMode !== 'local' || !sessionId) return;
+  LocalMemory.saveMessage(sessionId, USER_ID, role, content, module);
+}
+
+function buildMemoryContext() {
+  if (!memoryEnabled || memoryMode !== 'local') return '';
+  return LocalMemory.getMemoryContext(USER_ID, module);
+}
+
+// ── SEND ───────────────────────────────────────────────────────────────────────
 async function send() {
   const input = $('msg-input');
   const text  = input.value.trim();
@@ -110,6 +186,9 @@ async function send() {
   history.push({ role: 'user', content: text });
   showTyping();
 
+  // Save user message in local mode
+  saveMessageLocal('user', text);
+
   try {
     const backendChoice = $('model-select')?.value || 'nvidia';
     const res = await fetch(`${getBackend()}/api/test/chat`, {
@@ -120,6 +199,12 @@ async function send() {
         module,
         history: history.slice(0, -1),
         backend: backendChoice,
+        // Memory fields
+        sessionId,
+        userId:        USER_ID,
+        memoryEnabled,
+        memoryMode,
+        memoryContext: buildMemoryContext(),
       }),
     });
 
@@ -133,9 +218,12 @@ async function send() {
     hideTyping();
     appendMsg('ai', reply);
 
+    // Save assistant reply in local mode
+    saveMessageLocal('assistant', reply);
+
   } catch (e) {
     hideTyping();
-    history.pop(); // remove the failed user message from history
+    history.pop();
     appendMsg('ai', `⚠️ ${e.message}`, true);
   } finally {
     $('btn-send').disabled = false;
@@ -143,15 +231,13 @@ async function send() {
   }
 }
 
-// ── EVENTS ─────────────────────────────────────────────────────────────────
-
+// ── EVENTS ─────────────────────────────────────────────────────────────────────
 $('btn-send').addEventListener('click', send);
 
 $('msg-input').addEventListener('keydown', e => {
   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
 });
 
-// Auto-grow textarea
 $('msg-input').addEventListener('input', function () {
   this.style.height = 'auto';
   this.style.height = Math.min(this.scrollHeight, 140) + 'px';
@@ -159,7 +245,12 @@ $('msg-input').addEventListener('input', function () {
 
 // Module switch
 document.querySelectorAll('.module-btn').forEach(btn => {
-  btn.addEventListener('click', () => {
+  btn.addEventListener('click', async () => {
+    if (btn.dataset.module === module) return;
+
+    // End current session before switching
+    await endMemorySession();
+
     document.querySelectorAll('.module-btn').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
     module = btn.dataset.module;
@@ -168,19 +259,230 @@ document.querySelectorAll('.module-btn').forEach(btn => {
     $('chat-title').textContent    = meta.title;
     $('chat-subtitle').textContent = meta.subtitle;
     renderWelcome();
+
+    // Start a new session for the new module
+    await startMemorySession();
   });
 });
 
 // Clear conversation
-$('btn-clear').addEventListener('click', () => {
+$('btn-clear').addEventListener('click', async () => {
+  await endMemorySession();
   history = [];
   renderWelcome();
+  await startMemorySession();
 });
 
-// ── BOOT ───────────────────────────────────────────────────────────────────
-renderWelcome();
+// ── MEMORY UI EVENTS ───────────────────────────────────────────────────────────
 
-// ── AUDIO / TTS / STT ──────────────────────────────────────────────────────
+const memoryToggle    = $('memory-enabled-toggle');
+const memoryModeRow   = $('memory-mode-row');
+const memoryHistoryBtn = $('btn-memory-history');
+const memoryBadge     = $('memory-badge');
+const memoryStatusText = $('memory-status-text');
+
+function updateMemoryUI() {
+  memoryModeRow.style.display    = memoryEnabled ? 'flex' : 'none';
+  memoryHistoryBtn.style.display = memoryEnabled ? 'block' : 'none';
+  memoryBadge.style.display      = memoryEnabled ? 'flex' : 'none';
+
+  if (memoryEnabled) {
+    const modeLabel = memoryMode === 'api' ? '☁️ API (Supabase)' : '💻 Local storage';
+    memoryStatusText.textContent = `On — ${modeLabel}`;
+  } else {
+    memoryStatusText.textContent = 'Off — AI forgets after session';
+  }
+}
+
+memoryToggle.addEventListener('change', async () => {
+  const wasEnabled = memoryEnabled;
+  memoryEnabled = memoryToggle.checked;
+  updateMemoryUI();
+
+  if (memoryEnabled && !wasEnabled) {
+    await startMemorySession();
+  } else if (!memoryEnabled && wasEnabled) {
+    await endMemorySession();
+  }
+});
+
+// Mode buttons
+document.querySelectorAll('.mode-btn').forEach(btn => {
+  btn.addEventListener('click', async () => {
+    if (btn.dataset.mode === memoryMode) return;
+
+    // End current session in old mode
+    await endMemorySession();
+
+    document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    memoryMode = btn.dataset.mode;
+    updateMemoryUI();
+
+    // Start new session in new mode
+    await startMemorySession();
+  });
+});
+
+// ── HISTORY DRAWER ─────────────────────────────────────────────────────────────
+
+const historyDrawer  = $('history-drawer');
+const historyOverlay = $('history-overlay');
+
+function openHistoryDrawer() {
+  historyOverlay.style.display = 'block';
+  historyDrawer.classList.add('open');
+  renderHistoryList();
+}
+
+function closeHistoryDrawer() {
+  historyOverlay.style.display = 'none';
+  historyDrawer.classList.remove('open');
+}
+
+$('btn-memory-history').addEventListener('click', openHistoryDrawer);
+$('btn-close-history').addEventListener('click', closeHistoryDrawer);
+historyOverlay.addEventListener('click', closeHistoryDrawer);
+
+// Period tabs
+document.querySelectorAll('.history-tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.history-tab').forEach(t => t.classList.remove('active'));
+    tab.classList.add('active');
+    historyPeriod = tab.dataset.period;
+    renderHistoryList();
+  });
+});
+
+async function fetchSessions() {
+  if (memoryMode === 'local') {
+    return LocalMemory.getProgress(USER_ID, historyPeriod);
+  }
+  try {
+    const res = await fetch(`${getBackend()}/api/memory/progress/${USER_ID}?period=${historyPeriod}`);
+    if (!res.ok) return [];
+    const { sessions } = await res.json();
+    return sessions;
+  } catch { return []; }
+}
+
+const SENTIMENT_EMOJI = {
+  anxious: '😰', low: '😔', agitated: '😤', exhausted: '😩', stable: '😊', mixed: '🌊',
+};
+const MODULE_LABELS = { guide: 'Benefits', mind: 'Mood', ptsd: 'PTSD' };
+
+async function renderHistoryList() {
+  const list = $('history-list');
+  list.innerHTML = '<div class="history-empty">Loading…</div>';
+
+  const sessions = await fetchSessions();
+
+  if (!sessions || sessions.length === 0) {
+    list.innerHTML = '<div class="history-empty">No sessions in this period yet.</div>';
+    return;
+  }
+
+  // Show newest first
+  const sorted = [...sessions].reverse();
+
+  list.innerHTML = '';
+  sorted.forEach(s => {
+    const card = document.createElement('div');
+    card.className = 'session-card';
+
+    const date = new Date(s.created_at).toLocaleDateString('en-GB', {
+      day: '2-digit', month: 'short', year: 'numeric',
+      hour: '2-digit', minute: '2-digit',
+    });
+    const emoji    = SENTIMENT_EMOJI[s.sentiment] || '💬';
+    const modLabel = MODULE_LABELS[s.module] || s.module;
+    const topicsHtml = (s.key_topics || [])
+      .map(t => `<span class="session-topic">${t}</span>`).join('');
+    const isShared = s.is_shared_with_ai;
+    const summaryText = s.summary || '<em style="color:var(--text3)">Summary generating…</em>';
+
+    card.innerHTML = `
+      <div class="session-card-top">
+        <div class="session-card-meta">
+          <span class="session-module-badge">${modLabel}</span>
+          <span class="session-date">${date}</span>
+          ${s.sentiment ? `<span class="session-sentiment sentiment-${s.sentiment}">${emoji} ${s.sentiment}</span>` : ''}
+        </div>
+        <button class="session-delete-btn" title="Delete this session">🗑</button>
+      </div>
+      <div class="session-summary">${summaryText}</div>
+      ${topicsHtml ? `<div class="session-topics">${topicsHtml}</div>` : ''}
+      <div class="session-card-actions">
+        <label class="session-share-label${isShared ? ' shared' : ''}">
+          <input type="checkbox" ${isShared ? 'checked' : ''} />
+          ${isShared ? '✅ AI can see this session' : 'Share with AI'}
+        </label>
+        <span style="font-size:11px;color:var(--text3)">${s.message_count || 0} msgs · ${s.duration_minutes || 0} min</span>
+      </div>`;
+
+    // Toggle share
+    const shareCheckbox = card.querySelector('input[type="checkbox"]');
+    const shareLabel    = card.querySelector('.session-share-label');
+    shareCheckbox.addEventListener('change', async () => {
+      const shared = shareCheckbox.checked;
+      shareLabel.classList.toggle('shared', shared);
+      shareLabel.childNodes[1].textContent = shared ? ' ✅ AI can see this session' : ' Share with AI';
+
+      if (memoryMode === 'local') {
+        LocalMemory.toggleShare(s.session_id, USER_ID, shared);
+      } else {
+        try {
+          await fetch(`${getBackend()}/api/memory/session/${s.session_id}/share`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ userId: USER_ID, shared }),
+          });
+        } catch { /* non-critical */ }
+      }
+    });
+
+    // Delete session
+    card.querySelector('.session-delete-btn').addEventListener('click', async () => {
+      if (!confirm('Delete this session from memory?')) return;
+      if (memoryMode === 'local') {
+        LocalMemory.deleteSession(s.session_id, USER_ID);
+      } else {
+        try {
+          await fetch(`${getBackend()}/api/memory/session/${s.session_id}`, {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ userId: USER_ID }),
+          });
+        } catch { /* non-critical */ }
+      }
+      card.remove();
+      if ($('history-list').children.length === 0) {
+        $('history-list').innerHTML = '<div class="history-empty">No sessions in this period yet.</div>';
+      }
+    });
+
+    list.appendChild(card);
+  });
+}
+
+// Delete all memory
+$('btn-delete-all-memory').addEventListener('click', async () => {
+  if (!confirm('Delete ALL session memory? This cannot be undone.')) return;
+  if (memoryMode === 'local') {
+    LocalMemory.deleteAllMemory(USER_ID);
+  } else {
+    try {
+      await fetch(`${getBackend()}/api/memory/all/${USER_ID}`, { method: 'DELETE' });
+    } catch { /* non-critical */ }
+  }
+  $('history-list').innerHTML = '<div class="history-empty">All memory deleted.</div>';
+});
+
+// ── BOOT ───────────────────────────────────────────────────────────────────────
+renderWelcome();
+updateMemoryUI();
+
+// ── AUDIO / TTS / STT ──────────────────────────────────────────────────────────
 async function playTTS(btn, text) {
   const originalText = btn.innerHTML;
   btn.innerHTML = '⏳ Loading...';
@@ -198,12 +500,12 @@ async function playTTS(btn, text) {
     const blob = await res.blob();
     const url = URL.createObjectURL(blob);
     const audio = new Audio(url);
-    
+
     audio.onended = () => {
       btn.innerHTML = originalText;
       btn.disabled = false;
     };
-    
+
     btn.innerHTML = '🔊 Playing...';
     await audio.play();
   } catch (err) {
@@ -253,7 +555,7 @@ async function startRecording() {
         });
         if (!res.ok) throw new Error('Transcription failed');
         const data = await res.json();
-        
+
         const input = $('msg-input');
         input.value = (input.value + ' ' + data.text).trim();
         input.focus();

@@ -22,7 +22,7 @@
         <span class="module-icon">📋</span>
         <div>
           <div class="module-name">Benefits Guide</div>
-          <div class="module-desc">Rights & allowances</div>
+          <div class="module-desc">Rights &amp; allowances</div>
         </div>
       </button>
 
@@ -40,6 +40,36 @@
           <div class="module-name">PTSD Support</div>
           <div class="module-desc">Trauma-aware companion</div>
         </div>
+      </button>
+
+      <!-- ── MEMORY SECTION ─────────────────────────────────── -->
+      <div class="sidebar-divider"></div>
+      <p class="sidebar-label">Memory</p>
+
+      <!-- Memory On/Off toggle -->
+      <div class="memory-toggle-row">
+        <div class="memory-toggle-info">
+          <span class="memory-toggle-icon">🧬</span>
+          <div>
+            <div class="memory-toggle-label">Session Memory</div>
+            <div class="memory-toggle-desc" id="memory-status-text">Off — AI forgets after session</div>
+          </div>
+        </div>
+        <label class="toggle-switch">
+          <input type="checkbox" id="memory-enabled-toggle" />
+          <span class="toggle-track"></span>
+        </label>
+      </div>
+
+      <!-- Storage mode selector -->
+      <div class="memory-mode-row" id="memory-mode-row" style="display:none">
+        <button class="mode-btn active" id="mode-btn-api" data-mode="api">☁️ API</button>
+        <button class="mode-btn" id="mode-btn-local" data-mode="local">💻 Local</button>
+      </div>
+
+      <!-- View history button -->
+      <button class="btn-memory-history" id="btn-memory-history" style="display:none">
+        📖 View Session History
       </button>
 
       <div class="spacer"></div>
@@ -67,7 +97,10 @@
           <div class="chat-title" id="chat-title">Benefits Navigator</div>
           <div class="chat-subtitle" id="chat-subtitle">Ask about your IDF rights, allowances &amp; healthcare</div>
         </div>
-        <div class="header-badge" id="connection-badge">⚡ Dev Mode</div>
+        <div style="display:flex;gap:10px;align-items:center">
+          <div class="memory-badge" id="memory-badge" style="display:none">🧬 Memory On</div>
+          <div class="header-badge" id="connection-badge">⚡ Dev Mode</div>
+        </div>
       </header>
 
       <div id="messages" class="messages-area">
@@ -93,6 +126,34 @@
     </main>
   </div>
 
+  <!-- ── HISTORY DRAWER ─────────────────────────────────────────────────── -->
+  <div id="history-overlay" class="history-overlay" style="display:none"></div>
+  <aside id="history-drawer" class="history-drawer">
+    <div class="history-drawer-header">
+      <div>
+        <div class="history-drawer-title">🧬 Session Memory</div>
+        <div class="history-drawer-sub">You control what the AI remembers</div>
+      </div>
+      <button class="history-close-btn" id="btn-close-history">✕</button>
+    </div>
+
+    <!-- Period tabs -->
+    <div class="history-tabs">
+      <button class="history-tab active" data-period="week">This Week</button>
+      <button class="history-tab" data-period="month">This Month</button>
+      <button class="history-tab" data-period="all">All Time</button>
+    </div>
+
+    <div id="history-list" class="history-list">
+      <div class="history-empty">No sessions yet. Start chatting to build memory.</div>
+    </div>
+
+    <div class="history-footer">
+      <button class="btn-danger-outline" id="btn-delete-all-memory">🗑 Delete All Memory</button>
+    </div>
+  </aside>
+
+  <script src="memory-local.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

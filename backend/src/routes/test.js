@@ -1,5 +1,6 @@
 const { Router } = require('express');
 const { chat, parseJSON } = require('../services/aiService');
+const mem = require('../services/memoryService');
 
 const router = Router();
 
@@ -103,14 +104,33 @@ router.post('/chat', async (req, res, next) => {
       module: mod = 'guide',
       history = [],
       backend = 'nvidia',  // 'nvidia' (cloud) | 'local' (LM Studio)
+      // Memory fields (optional)
+      sessionId   = null,
+      userId      = null,
+      memoryEnabled = false,
+      memoryMode  = 'api', // 'api' | 'local'
+      memoryContext = '', // pre-built context string (from local mode)
     } = req.body;
 
     if (!message) return res.status(422).json({ error: 'message is required' });
 
-    const systemPrompt =
+    let systemPrompt =
       mod === 'mind' ? MIND_PROMPT :
       mod === 'ptsd' ? PTSD_PROMPT :
       GUIDE_PROMPT;
+
+    // ── Inject memory context ──────────────────────────────────────────────
+    if (memoryEnabled) {
+      let ctx = '';
+      if (memoryMode === 'api' && userId) {
+        // Fetch from Supabase
+        try { ctx = await mem.getMemoryContext(userId, mod); } catch { /* non-blocking */ }
+      } else if (memoryMode === 'local' && memoryContext) {
+        // Client-built context from localStorage
+        ctx = memoryContext;
+      }
+      if (ctx) systemPrompt = `${systemPrompt}\n\n${ctx}`;
+    }
 
     // Build messages: system + conversation history + new user message
     const messages = [
@@ -118,6 +138,11 @@ router.post('/chat', async (req, res, next) => {
       ...history.slice(-20), // keep last 20 for token safety
       { role: 'user', content: message },
     ];
+
+    // ── Save user message in real-time (API mode) ──────────────────────────
+    if (memoryEnabled && memoryMode === 'api' && sessionId && userId) {
+      mem.saveMessage(sessionId, userId, 'user', message, mod).catch(() => {});
+    }
 
     const raw = await chat(messages, {
       priority: 1,
@@ -137,6 +162,11 @@ router.post('/chat', async (req, res, next) => {
           reply += `\n\n**${parsed.recommendation.title}**\n${parsed.recommendation.instruction}`;
         }
       } catch { /* keep raw */ }
+    }
+
+    // ── Save assistant reply in real-time (API mode) ───────────────────────
+    if (memoryEnabled && memoryMode === 'api' && sessionId && userId) {
+      mem.saveMessage(sessionId, userId, 'assistant', reply, mod).catch(() => {});
     }
 
     res.json({ reply });

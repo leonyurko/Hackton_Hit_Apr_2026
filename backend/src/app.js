@@ -15,6 +15,7 @@ const guideRoutes = require('./routes/guide');
 const reminderRoutes = require('./routes/reminders');
 const audioRoutes    = require('./routes/audio');
 const testRoutes     = require('./routes/test');
+const memoryRoutes   = require('./routes/memory');
 const { errorHandler, notFound } = require('./middleware/errorHandler');
 const { startScheduler } = require('./scheduler');
 
@@ -83,6 +84,7 @@ app.use('/api/link', linkRoutes);
 app.use('/api/guide', guideRoutes);
 app.use('/api/reminders', reminderRoutes);
 app.use('/api/audio', audioRoutes);
+app.use('/api/memory', memoryRoutes);
 
 // Dev-only test route (no auth) — disabled in production
 if (process.env.NODE_ENV !== 'production') {

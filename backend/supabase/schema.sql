@@ -410,3 +410,50 @@ as $$
   order by um.embedding <=> query_embedding
   limit match_count;
 $$;
+
+-- =============================================================================
+-- MEMORY & CONTINUITY — Consensual Trauma Memory
+-- =============================================================================
+
+-- ---------------------------------------------------------------------------
+-- session_messages: every message written in real-time during a session
+-- ---------------------------------------------------------------------------
+create table if not exists public.session_messages (
+  id          uuid primary key default uuid_generate_v4(),
+  session_id  uuid not null default uuid_generate_v4(),  -- groups messages in a session
+  user_id     text not null,     -- anonymous UUID from localStorage (no auth required)
+  role        text not null check (role in ('user', 'assistant', '__session_start__')),
+  content     text not null,
+  module      text not null default 'guide' check (module in ('guide', 'mind', 'ptsd')),
+  created_at  timestamptz default now()
+);
+
+-- ---------------------------------------------------------------------------
+-- session_summaries: AI-generated summary saved when session ends
+-- ---------------------------------------------------------------------------
+create table if not exists public.session_summaries (
+  id                 uuid primary key default uuid_generate_v4(),
+  session_id         uuid not null,
+  user_id            text not null,    -- anonymous UUID (matches session_messages.user_id)
+  module             text not null default 'guide' check (module in ('guide', 'mind', 'ptsd')),
+  summary            text,             -- 2-3 sentence AI summary
+  sentiment          text check (sentiment in ('anxious', 'low', 'agitated', 'exhausted', 'stable', 'mixed')),
+  key_topics         text[] default '{}',
+  message_count      int default 0,
+  duration_minutes   int default 0,
+  is_shared_with_ai  boolean default false, -- user explicitly opts-in per session
+  created_at         timestamptz default now()
+);
+
+-- Indexes for common queries
+create index if not exists idx_session_messages_session  on public.session_messages (session_id);
+create index if not exists idx_session_messages_user     on public.session_messages (user_id);
+create index if not exists idx_session_summaries_user    on public.session_summaries (user_id, created_at desc);
+create index if not exists idx_session_summaries_shared  on public.session_summaries (user_id, is_shared_with_ai);
+
+-- RLS: disable row-level security (service role handles access from backend)
+-- These tables use anonymous user_id (text, not UUID foreign key), so RLS
+-- would need to match on text which doesn't integrate with auth.uid().
+-- All access is handled via service role key from the backend.
+alter table public.session_messages  disable row level security;
+alter table public.session_summaries disable row level security;
