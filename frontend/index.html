@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Eitan — AI Chat</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <div id="app">
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <div class="sidebar-logo">🛡️ <span>Eitan</span></div>
+      <div class="sidebar-tagline">AI Recovery Companion</div>
+
+      <p class="sidebar-label">Modules</p>
+
+      <button class="module-btn active" data-module="guide">
+        <span class="module-icon">📋</span>
+        <div>
+          <div class="module-name">Benefits Guide</div>
+          <div class="module-desc">Rights & allowances</div>
+        </div>
+      </button>
+
+      <button class="module-btn" data-module="mind">
+        <span class="module-icon">🧠</span>
+        <div>
+          <div class="module-name">Mood Check-in</div>
+          <div class="module-desc">Mental wellness</div>
+        </div>
+      </button>
+
+      <button class="module-btn" data-module="ptsd">
+        <span class="module-icon">🕊️</span>
+        <div>
+          <div class="module-name">PTSD Support</div>
+          <div class="module-desc">Trauma-aware companion</div>
+        </div>
+      </button>
+
+      <div class="spacer"></div>
+
+      <div class="backend-row">
+        <label>Model</label>
+        <select id="model-select">
+          <option value="nvidia">☁️ NVIDIA — Llama 4 Maverick</option>
+          <option value="local">💻 Local — LM Studio</option>
+        </select>
+      </div>
+
+      <div class="backend-row">
+        <label>Backend URL (blank = same origin)</label>
+        <input id="backend-url" type="url" placeholder="http://localhost:3000" value="" />
+      </div>
+
+      <button id="btn-clear" class="btn-secondary">🗑 Clear conversation</button>
+    </aside>
+
+    <!-- Main Chat -->
+    <main class="chat-main">
+      <header class="chat-header">
+        <div>
+          <div class="chat-title" id="chat-title">Benefits Navigator</div>
+          <div class="chat-subtitle" id="chat-subtitle">Ask about your IDF rights, allowances &amp; healthcare</div>
+        </div>
+        <div class="header-badge" id="connection-badge">⚡ Dev Mode</div>
+      </header>
+
+      <div id="messages" class="messages-area">
+        <!-- welcome injected by JS -->
+      </div>
+
+      <div id="typing" class="typing-wrap" style="display:none">
+        <div class="ai-bubble typing-bubble">
+          <span></span><span></span><span></span>
+        </div>
+      </div>
+
+      <div class="input-area">
+        <textarea id="msg-input" placeholder="Type your message… (Enter to send, Shift+Enter for new line)" rows="1"></textarea>
+        <button id="btn-send" class="send-btn" title="Send">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <line x1="22" y1="2" x2="11" y2="13"></line>
+            <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+          </svg>
+        </button>
+      </div>
+    </main>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
