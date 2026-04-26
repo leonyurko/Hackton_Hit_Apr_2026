@@ -13,6 +13,7 @@ const bodyRoutes = require('./routes/body');
 const linkRoutes = require('./routes/link');
 const guideRoutes = require('./routes/guide');
 const reminderRoutes = require('./routes/reminders');
+const audioRoutes    = require('./routes/audio');
 const testRoutes     = require('./routes/test');
 const { errorHandler, notFound } = require('./middleware/errorHandler');
 const { startScheduler } = require('./scheduler');
@@ -81,6 +82,7 @@ app.use('/api/body', bodyRoutes);
 app.use('/api/link', linkRoutes);
 app.use('/api/guide', guideRoutes);
 app.use('/api/reminders', reminderRoutes);
+app.use('/api/audio', audioRoutes);
 
 // Dev-only test route (no auth) — disabled in production
 if (process.env.NODE_ENV !== 'production') {

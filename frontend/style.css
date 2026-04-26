@@ -240,6 +240,23 @@ html, body, #app {
 .ai-bubble p  { margin-bottom: 6px; }
 .ai-bubble p:last-child { margin-bottom: 0; }
 
+.play-btn {
+  background: var(--glass2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text2);
+  cursor: pointer;
+  font-size: 11px;
+  padding: 4px 8px;
+  margin-top: 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: all .2s;
+}
+.play-btn:hover { background: var(--glass); color: var(--text); border-color: var(--accent); }
+.play-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
 /* Typing */
 .typing-wrap { padding: 0 28px 4px; }
 .typing-bubble {
@@ -311,6 +328,30 @@ html, body, #app {
 .send-btn:hover   { opacity: .85; transform: scale(1.05); }
 .send-btn:active  { transform: scale(.97); }
 .send-btn:disabled { opacity: .35; cursor: not-allowed; transform: none; }
+
+.mic-btn {
+  align-items: center;
+  background: var(--glass2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  color: var(--text2);
+  cursor: pointer;
+  display: flex;
+  flex-shrink: 0;
+  height: 44px;
+  justify-content: center;
+  transition: all .2s;
+  width: 44px;
+  font-size: 18px;
+}
+.mic-btn:hover { color: var(--text); background: var(--glass); border-color: var(--accent); }
+.mic-btn.recording { background: rgba(239,68,68,.2); border-color: var(--error); color: var(--error); animation: pulse 1.5s infinite; }
+
+@keyframes pulse {
+  0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4); }
+  70% { box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+}
 
 /* ── ERROR MSG ───────────────────────────────────────────────────────── */
 .error-bubble {

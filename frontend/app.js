@@ -78,11 +78,15 @@ function appendMsg(role, text, isError = false) {
     ? text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
     : `<p>${md(text)}</p>`;
 
+  const playBtnHtml = (!isUser && !isError) 
+    ? `<button class="play-btn" onclick="playTTS(this, ${JSON.stringify(text).replace(/"/g, '&quot;')})">🔊 Read Aloud</button>`
+    : '';
+
   row.innerHTML = `
     <div class="msg-avatar">${isUser ? '👤' : '🛡️'}</div>
     <div class="msg-content">
       <div class="msg-label">${isUser ? 'You' : 'Eitan AI'}</div>
-      <div class="${bubbleClass}">${isError ? text : content}</div>
+      <div class="${bubbleClass}">${isError ? text : content}${playBtnHtml}</div>
     </div>`;
 
   $('messages').appendChild(row);
@@ -175,3 +179,106 @@ $('btn-clear').addEventListener('click', () => {
 
 // ── BOOT ───────────────────────────────────────────────────────────────────
 renderWelcome();
+
+// ── AUDIO / TTS / STT ──────────────────────────────────────────────────────
+async function playTTS(btn, text) {
+  const originalText = btn.innerHTML;
+  btn.innerHTML = '⏳ Loading...';
+  btn.disabled = true;
+
+  try {
+    const res = await fetch(`${getBackend()}/api/audio/tts`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text }),
+    });
+
+    if (!res.ok) throw new Error('Failed to generate audio');
+
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const audio = new Audio(url);
+    
+    audio.onended = () => {
+      btn.innerHTML = originalText;
+      btn.disabled = false;
+    };
+    
+    btn.innerHTML = '🔊 Playing...';
+    await audio.play();
+  } catch (err) {
+    console.error(err);
+    alert('Failed to play audio');
+    btn.innerHTML = originalText;
+    btn.disabled = false;
+  }
+}
+
+let mediaRecorder;
+let audioChunks = [];
+let isRecording = false;
+
+const micBtn = $('btn-mic');
+
+micBtn.addEventListener('mousedown', startRecording);
+micBtn.addEventListener('mouseup', stopRecording);
+micBtn.addEventListener('mouseleave', stopRecording);
+micBtn.addEventListener('touchstart', (e) => { e.preventDefault(); startRecording(); });
+micBtn.addEventListener('touchend', stopRecording);
+
+async function startRecording() {
+  if (isRecording) return;
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    mediaRecorder = new MediaRecorder(stream);
+    audioChunks = [];
+
+    mediaRecorder.addEventListener('dataavailable', event => {
+      audioChunks.push(event.data);
+    });
+
+    mediaRecorder.addEventListener('stop', async () => {
+      const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+      micBtn.classList.remove('recording');
+      micBtn.innerHTML = '⏳';
+      micBtn.disabled = true;
+
+      const formData = new FormData();
+      formData.append('audio', audioBlob, 'voice.webm');
+
+      try {
+        const res = await fetch(`${getBackend()}/api/audio/stt`, {
+          method: 'POST',
+          body: formData,
+        });
+        if (!res.ok) throw new Error('Transcription failed');
+        const data = await res.json();
+        
+        const input = $('msg-input');
+        input.value = (input.value + ' ' + data.text).trim();
+        input.focus();
+      } catch (err) {
+        console.error(err);
+        alert('Failed to transcribe audio.');
+      } finally {
+        micBtn.innerHTML = '🎤';
+        micBtn.disabled = false;
+      }
+    });
+
+    isRecording = true;
+    micBtn.classList.add('recording');
+    mediaRecorder.start();
+  } catch (err) {
+    console.error('Mic error:', err);
+    alert('Microphone access denied or unavailable.');
+  }
+}
+
+function stopRecording() {
+  if (isRecording && mediaRecorder.state !== 'inactive') {
+    isRecording = false;
+    mediaRecorder.stop();
+    mediaRecorder.stream.getTracks().forEach(track => track.stop());
+  }
+}
